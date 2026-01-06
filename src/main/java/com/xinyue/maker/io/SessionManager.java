@@ -1,6 +1,7 @@
 package com.xinyue.maker.io;
 
 import com.xinyue.maker.config.DynamicConfigService;
+import com.xinyue.maker.io.output.TradeSession;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,15 +15,15 @@ public final class SessionManager {
         this.configService = configService;
     }
 
-    public TradeSession acquire(short accountId) {
-        return sessions.stream()
-                .filter(session -> session.accountId() == accountId)
-                .findFirst()
-                .orElseGet(() -> {
-                    TradeSession session = new TradeSession(accountId);
-                    sessions.add(session);
-                    return session;
-                });
-    }
+//    public TradeSession acquire(int accountId) {
+//        return sessions.stream()
+//                .filter(session -> session.accountId == accountId)
+//                .findFirst()
+//                .orElseGet(() -> {
+//                    TradeSession session = new TradeSession(accountId);
+//                    sessions.add(session);
+//                    return session;
+//                });
+//    }
 }
 

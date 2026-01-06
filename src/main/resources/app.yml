@@ -1,0 +1,27 @@
+# Solon 应用配置文件
+# 参考：https://solon.noear.org/article/55
+
+# 服务器配置
+server:
+  port: 8090  # Web 服务器端口
+
+# 应用配置
+solon:
+  app:
+    name: maker-system
+    group: com.xinyue
+
+# 数据源配置
+solon.dataSources:
+  db1!:
+    class: "com.zaxxer.hikari.HikariDataSource"
+    jdbcUrl: "jdbc:mysql://127.0.0.1:13306/maker_system?charset=utf8mb4&parseTime=True&loc=Local&multiStatements=true"
+    driverClassName: "com.mysql.cj.jdbc.Driver"
+    username: "root"
+    password: "cljslrl0620"
+    maximumPoolSize: 10
+    minimumIdle: 2
+    connectionTimeout: 30000
+    idleTimeout: 600000
+    maxLifetime: 1800000
+

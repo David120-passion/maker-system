@@ -5,7 +5,8 @@ package com.xinyue.maker.common;
  */
 public enum Exchange {
     BINANCE((short) 1, true),
-    TARGET((short) 2, false);
+    DYDX((short) 2, false),
+    Test((short) 3, true);
 
     private final short id;
     private final boolean referenceOnly;

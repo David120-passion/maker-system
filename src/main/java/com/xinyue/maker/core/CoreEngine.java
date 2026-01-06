@@ -4,9 +4,10 @@ import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.xinyue.maker.common.CoreEvent;
-import com.xinyue.maker.io.AccessLayerCoordinator;
-import com.xinyue.maker.io.GapDetector;
+import com.xinyue.maker.io.input.AccessLayerCoordinator;
+import com.xinyue.maker.io.input.GapDetector;
 import com.xinyue.maker.io.ListenKeyRefresher;
+import com.xinyue.maker.io.output.DydxConnector;
 
 import java.util.concurrent.ThreadFactory;
 
@@ -33,8 +34,8 @@ public final class CoreEngine {
     public void start() {
         disruptor.start();
         accessLayerCoordinator.startAll();
-        listenKeyRefresher.start();
-        gapDetector.start();
+//        listenKeyRefresher.start();
+//        gapDetector.start();
     }
 
     public RingBuffer<CoreEvent> ringBuffer() {
@@ -45,7 +46,9 @@ public final class CoreEngine {
                                                           EventHandler<CoreEvent> handler,
                                                           ThreadFactory threadFactory) {
         Disruptor<CoreEvent> disruptor = new Disruptor<CoreEvent>(factory, 1024, threadFactory);
-        disruptor.handleEventsWith(handler);
+        if (handler != null) {
+            disruptor.handleEventsWith(handler);
+        }
         return disruptor;
     }
 }

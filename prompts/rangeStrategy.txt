@@ -1,0 +1,77 @@
+角色设定： 你是一位精通 Java 高频交易系统开发的资深架构师。我们正在现有的低延迟架构（基于 Disruptor/Netty）上开发一个新的 L3 策略。
+
+任务目标： 编写一个名为 InternalRangeOscillatorStrategy 的 Java 策略类。
+
+策略背景与职责： 这个策略不再参考任何外部行情。它的核心职责是在一个指定的封闭价格区间内（如 60000 到 65000），生成高度拟真的随机价格波动，并通过向我们的 L2 OMS 发送买卖订单来控制我们交易所的盘口，使其走出相应的 K 线形态。
+
+当前阶段要求（MVP）： 实现最基础的“范围内拟真随机波动”。暂不考虑金叉死叉，先把价格走势画得像真的。
+
+代码实现要求细节：
+1. 类结构定义：
+
+类名：InternalRangeOscillatorStrategy
+
+它应该实现我们架构中的标准策略接口（假设为 Strategy），包含初始化方法 onStart() 和定时回调方法 onTimerTick()。
+
+它需要持有对 L2 OMS 的引用（假设为 OmsManager），以便发送订单指令。
+
+2. 关键成员变量（配置与状态）：
+
+配置参数（设为 final）：
+
+minPriceE8 (long): 最低价（放大10^8倍，下同）
+
+maxPriceE8 (long): 最高价
+
+tickSizeE8 (long): 最小变动单位（例如 0.01 * 10^8）
+
+baseVolatilityE8 (double): 基础波动的标准差，控制每次跳动的平均幅度。
+
+momentumFactor (double): 动量因子（0.0~1.0之间），用于维持短期趋势。
+
+状态变量（需要变动）：
+
+currentTargetPriceE8 (double): 当前策略计算出的目标价格（用 double 保持计算精度）。
+
+lastChangeE8 (double): 上一次价格变动的幅度（用于计算动量）。
+
+random (java.util.Random): 用于生成随机数。
+
+3. 核心算法逻辑 (实现于 onTimerTick 方法中)： 这是策略的心脏，每隔一段时间（如 500ms）被系统调用一次。必须实现以下拟真算法，严禁使用简单的均匀随机数：
+
+A. 计算边界吸力 (Boundary Force)：
+
+计算当前价格在区间内的相对位置。
+
+如果价格靠近上限，生成一个向下的负向力；如果靠近下限，生成一个向上的正向力。越靠近边界，这个力越大，实现“软着陆”，防止价格贴边。
+
+B. 计算趋势均值 (Trend Mean)：
+
+mean = (lastChangeE8 * momentumFactor) + boundaryForce。这里引入了短期动量惯性和边界吸力。
+
+C. 生成拟真波动 (Gaussian Noise)：
+
+使用 random.nextGaussian() 生成符合正态分布的随机数。
+
+change = mean + (random.nextGaussian() * baseVolatilityE8)。
+
+D. 计算并限制新价格：
+
+newPrice = currentTargetPriceE8 + change。
+
+硬兜底： 使用 Math.min 和 Math.max 确保 newPrice 绝对不会超出 minPriceE8 和 maxPriceE8 的范围。
+
+E. 精度格式化与状态更新：
+
+将 newPrice 按照 tickSizeE8 进行四舍五入（Round to nearest tick）。
+
+更新 lastChangeE8 和 currentTargetPriceE8。
+
+4. 执行逻辑 (简化的发单)：
+
+在算出新的 currentTargetPriceE8 后，为了简单起见，策略通过 omsManager 发送一个**小额的市价单（Taker）**来推动价格。
+
+逻辑简述： 如果新价格 > 旧价格，发一个市价买单；如果新价格 < 旧价格，发一个市价卖单。数量设为一个固定小值即可。
+
+备注: 目前只有两个账户在 accounts.properties 配置文件里面，未来会有多个
+请生成包含完整注释的 Java 代码。

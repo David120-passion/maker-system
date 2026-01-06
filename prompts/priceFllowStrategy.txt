@@ -1,0 +1,68 @@
+需求：
+StrategyEngine 在初始化时指定策略，后续执行由该策略负责。
+实现价格跟随策略（PriceFollowingStrategy），在订单簿变动时执行（onDepthUpdate）。
+
+价格跟随策略细节：
+跟随币安订单簿变动，在目标交易所（dYdX）挂单
+买单目标价：币安买一价 - 价差（spread）
+卖单目标价：币安卖一价 + 价差（spread）
+
+价差：固定值，可配置（默认 0.5 USDT，1e8 放大存储为 50_000000L）
+
+订单数量：根据币安订单簿深度动态计算（可配置百分比和上下限）
+- 百分比参数：depthPercentage（默认 10%，即 0.1），表示订单数量 = 币安深度 × 百分比
+- 买单数量 = 币安买一价深度 × depthPercentage
+- 卖单数量 = 币安卖一价深度 × depthPercentage
+- 最小订单数量：minOrderSizeE8（默认 0.001 BTC = 100_000L，1e8 放大）
+- 最大订单数量：maxOrderSizeE8（默认 0.1 BTC = 10_000000L，1e8 放大）
+- 如果计算结果小于最小值，使用最小值；如果大于最大值，使用最大值
+
+价格变化阈值：只有币安价格变化超过最小阈值才调整订单（默认 0.1 USDT = 10_000000L）
+
+最小价差检查：目标卖价 - 目标买价 >= 最小价差（默认 0.2 USDT = 20_000000L），否则不挂单
+
+订单维护逻辑（非阻塞，状态机+事件驱动）：
+如果目标价已有活跃订单，不调整
+否则需要调整订单时：
+1. 首先检查新订单价格是否与旧订单价格交叉（自成交风险检查）：
+   - 如果新卖价 <= 旧买价，或新买价 >= 旧卖价，存在自成交风险
+   - 在这种情况下，采用"先撤后挂"策略（非阻塞）：
+     a. 立即发送撤单请求（异步，非阻塞）
+     b. 保存待挂新单的价格信息到策略状态中（pendingNewBidPrice, pendingNewAskPrice, pendingNewBidQty, pendingNewAskQty）
+     c. 设置状态为 PENDING_CANCEL，记录 pendingCancelBidOrderId 和 pendingCancelAskOrderId
+     d. onDepthUpdate 方法立即返回，不阻塞主线程
+     e. 当 ACCOUNT_ORDER_UPDATE 事件到来且订单状态变为 Canceled 时，在策略的 onAccountOrderUpdate 方法中检查状态
+     f. 如果处于 PENDING_CANCEL 状态且对应的撤单已确认，则挂新单，并重置状态为 IDLE
+   
+2. 如果不存在自成交风险：
+   - 检查余额：可用余额 + 待取消订单的锁定余额 >= 新订单所需余额
+   - 如果余额足够：先挂新订单，再撤旧订单（异步，非阻塞，onDepthUpdate 立即返回）
+   - 如果余额不足：先撤旧订单（异步，非阻塞），保存待挂新单信息，设置状态为 PENDING_CANCEL，在撤单确认后挂新单（通过 onAccountOrderUpdate 处理）
+
+重要：所有操作都必须是非阻塞的，不能使用 Thread.sleep()、wait()、await()、Future.get() 等同步阻塞方法。必须使用状态机 + 事件驱动模式处理异步流程。
+
+余额释放规则（严格）：余额只能在收到撤单确认消息（订单状态变为 Canceled）后才能释放，不能在发起撤单时提前释放
+
+异步撤单处理：
+OMS 的 cancelOrder 方法：
+立即将订单状态标记为 PendingCancel（状态码 8）
+从价格索引移除该订单（避免查询到，但不释放余额）
+异步发送撤单请求到交易所（非阻塞）
+不释放余额，等撤单确认消息（ACCOUNT_ORDER_UPDATE 或 EXECUTION_REPORT）到来时再释放
+
+边界检查：
+币安买一价 > 0 && 币安卖一价 > 0
+币安卖一价 > 币安买一价
+目标价差 >= 最小价差
+挂买单前：检查 (Free USDT + PendingCancel 订单的锁定 USDT) >= 目标买价 × 订单数量
+挂卖单前：检查 (Free BTC + PendingCancel 订单的锁定 BTC) >= 订单数量
+
+需要扩展的功能：
+1. OrderBookSnapshot 需要添加 bestBidQtyE8 和 bestAskQtyE8 字段（币安订单簿深度）
+2. LobManager 需要从 LocalOrderBook 同步深度数量到 OrderBookSnapshot
+3. LocalOrderBook 需要提供 bestBidQtyE8() 和 bestAskQtyE8() 方法（返回买一价和卖一价的深度）
+4. PriceFollowingStrategy 需要实现自成交风险检查方法 wouldSelfTrade()
+5. PriceFollowingStrategy 需要维护状态机（AdjustState 枚举：IDLE, PENDING_CANCEL）管理撤单确认后的挂单操作
+6. MarketMakingStrategy 接口需要添加 onAccountOrderUpdate(CoreEvent event) 方法，用于处理撤单确认事件
+7. StrategyEngine 需要在 handleAccountOrderUpdate 中调用策略的 onAccountOrderUpdate 方法
+8. PriceFollowingStrategy 需要在状态机中保存待挂新单信息（pendingNewBidPrice, pendingNewAskPrice, pendingNewBidQty, pendingNewAskQty, pendingCancelBidOrderId, pendingCancelAskOrderId）
