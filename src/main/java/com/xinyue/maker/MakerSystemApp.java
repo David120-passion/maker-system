@@ -226,7 +226,16 @@ public final class MakerSystemApp {
 //    }
 
     private static Disruptor<CoreEvent> getCoreEventDisruptor() {
-        ThreadFactory threadFactory = Thread.ofVirtual().name("disruptor-", 0).factory();
+        // 使用真实线程（CPU 密集型作业不适合虚拟线程）
+        ThreadFactory threadFactory = new ThreadFactory() {
+            private int counter = 0;
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "disruptor-" + (counter++));
+                t.setDaemon(false);
+                return t;
+            }
+        };
 
         // 先创建 Disruptor（但先不启动），因为 Normalizer 需要 RingBuffer
         Disruptor<CoreEvent> disruptor = CoreEngine.bootstrapDisruptor(

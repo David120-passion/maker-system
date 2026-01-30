@@ -189,4 +189,5 @@ public final class CoreEvent {
         System.arraycopy(qtys, 0, this.askQtys, 0, len);
         this.depthCount = len;
     }
+
 }

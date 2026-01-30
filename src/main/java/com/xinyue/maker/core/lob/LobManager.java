@@ -65,5 +65,19 @@ public final class LobManager {
     public OrderBookSnapshot primaryReference() {
         return registry.referenceBook(Exchange.BINANCE);
     }
+
+    /**
+     * 清理指定 symbolId 的所有交易所订单簿。
+     * 用于策略停止时清理相关订单簿数据。
+     * 
+     * @param symbolId 交易对ID
+     */
+    public void clearOrderBooksBySymbolId(short symbolId) {
+        // 清理所有交易所的订单簿
+        for (Exchange exchange : Exchange.values()) {
+            orderBookManager.remove(exchange, symbolId);
+        }
+        LOG.info("已清理 symbolId={} 的所有交易所订单簿", symbolId);
+    }
 }
 

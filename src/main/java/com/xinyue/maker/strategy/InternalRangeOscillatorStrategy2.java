@@ -267,12 +267,12 @@ public final class InternalRangeOscillatorStrategy2 implements MarketMakingStrat
         double avgOrderQtyE8 = avgVolumePerTriggerE8 / avgOrdersPerTrigger /makerCounts;
         
         // 设置订单数量范围（最小20%，最大250%）
-        long calculatedMinOrderQtyE8 = Math.max(1, (long) (avgOrderQtyE8 * 0.2)); // 至少为 1（最小单位）
-        long calculatedMaxOrderQtyE8 = Math.max(calculatedMinOrderQtyE8 + 1, (long) (avgOrderQtyE8 * 2.5));
+        long calculatedMinOrderQtyE8 = Math.max(minKeepOrderQtyE8, (long) (avgOrderQtyE8 * 0.2)); // 至少为 1（最小单位）
+        long calculatedMaxOrderQtyE8 = Math.max(calculatedMinOrderQtyE8 + minKeepOrderQtyE8, (long) (avgOrderQtyE8 * 2.5));
         
         // 确保最小值和最大值合理
         if (calculatedMinOrderQtyE8 >= calculatedMaxOrderQtyE8) {
-            calculatedMaxOrderQtyE8 = calculatedMinOrderQtyE8 + Math.max(1, (long) (avgOrderQtyE8 * 0.5));
+            calculatedMaxOrderQtyE8 = calculatedMinOrderQtyE8 + Math.max(minKeepOrderQtyE8, (long) (avgOrderQtyE8 * 0.5));
         }
         
         this.minOrderQtyE8 = calculatedMinOrderQtyE8;
@@ -372,7 +372,7 @@ public final class InternalRangeOscillatorStrategy2 implements MarketMakingStrat
                 maxOrderIntervalMs);
             
             // 首次初始化时，挂5笔大单
-//            placeInitialLargeOrders(event.timestamp);
+            placeInitialLargeOrders(event.timestamp);
             return;
         }else {
 //            ILocalOrderBook orderBook = lobManager.getOrderBook(Exchange.DYDX, symbolId);
@@ -719,14 +719,14 @@ public final class InternalRangeOscillatorStrategy2 implements MarketMakingStrat
             // 从卖一价下方开始挂单，向下挂 5 档
             // 价格上涨时，买单是"被动"的，使用随机小数量（在 minKeepOrderQtyE8 到 minKeepOrderQtyE8 * 2 之间）
             long startBuyPriceE8 = bestAskE8 - tickSizeE8; // 卖一价下方第一档
-            long maxKeepOrderQtyE8 = minKeepOrderQtyE8 * 2; // 上限：最小数量的 2 倍
+            long maxKeepOrderQtyE8 = minOrderQtyE8 * 2; // 上限：最小数量的 2 倍
             for (int i = 0; i < MAKER_DEPTH; i++) {
                 long buyPriceE8 = startBuyPriceE8 - i * tickSizeE8;
                 if (buyPriceE8 < minPriceE8) {
                     break; // 超出价格范围，停止挂单
                 }
                 // 生成随机小数量（minKeepOrderQtyE8 到 maxKeepOrderQtyE8 之间）
-                long randomQtyE8 = minKeepOrderQtyE8 + (long) (random.nextDouble() * (maxKeepOrderQtyE8 - minKeepOrderQtyE8));
+                long randomQtyE8 = minOrderQtyE8 + (long) (random.nextDouble() * (maxKeepOrderQtyE8 - minOrderQtyE8));
                 LOG.info("铺路，买，价格{}，数量：{}",buyPriceE8,randomQtyE8);
                 placeMakerBuyOrderWithQty(buyPriceE8, randomQtyE8, currentTimeMs);
             }
@@ -749,14 +749,14 @@ public final class InternalRangeOscillatorStrategy2 implements MarketMakingStrat
             // 从买一价上方开始挂单，向上挂 5 档
             // 价格下跌时，卖单是"被动"的，使用随机小数量（在 minKeepOrderQtyE8 到 minKeepOrderQtyE8 * 2 之间）
             long startSellPriceE8 = bestBidE8 + tickSizeE8; // 买一价上方第一档
-            long maxKeepOrderQtyE8 = minKeepOrderQtyE8 * 2; // 上限：最小数量的 2 倍
+            long maxKeepOrderQtyE8 = minOrderQtyE8 * 2; // 上限：最小数量的 2 倍
             for (int i = 0; i < MAKER_DEPTH; i++) {
                 long sellPriceE8 = startSellPriceE8 + i * tickSizeE8;
                 if (sellPriceE8 > maxPriceE8) {
                     break; // 超出价格范围，停止挂单
                 }
                 // 生成随机小数量（minKeepOrderQtyE8 到 maxKeepOrderQtyE8 之间）
-                long randomQtyE8 = minKeepOrderQtyE8 + (long) (random.nextDouble() * (maxKeepOrderQtyE8 - minKeepOrderQtyE8));
+                long randomQtyE8 = minOrderQtyE8 + (long) (random.nextDouble() * (maxKeepOrderQtyE8 - minOrderQtyE8));
                 LOG.info("铺路，卖，价格{}，数量：{}",sellPriceE8,randomQtyE8);
                 placeMakerSellOrderWithQty(sellPriceE8, randomQtyE8, currentTimeMs);
             }
@@ -893,8 +893,8 @@ public final class InternalRangeOscillatorStrategy2 implements MarketMakingStrat
         double adjustedMaxQtyE8 = maxOrderQtyE8 * adjustmentFactor;
         
         // 确保调整后的范围合理（不能小于最小值，也不能过大）
-        adjustedMinQtyE8 = Math.max(1, adjustedMinQtyE8); // 至少为1
-        adjustedMaxQtyE8 = Math.max(adjustedMinQtyE8 + 1, adjustedMaxQtyE8);
+        adjustedMinQtyE8 = Math.max(minKeepOrderQtyE8, adjustedMinQtyE8); // 至少为1
+        adjustedMaxQtyE8 = Math.max(adjustedMinQtyE8 + minKeepOrderQtyE8, adjustedMaxQtyE8);
         
         // 生成随机订单数量
         double ratio = random.nextDouble(); // 0.0 ~ 1.0
@@ -939,6 +939,7 @@ public final class InternalRangeOscillatorStrategy2 implements MarketMakingStrat
             if (targetPriceE8 >= bestAskE8) {
                 // 目标价格 >= 卖一价：需要吃掉从 bestAskE8 到 targetPriceE8 之间的所有卖单
                 long cumulativeQtyE8 = orderBook.calculateCumulativeAskQty(bestAskE8, targetPriceE8);
+
                 if (cumulativeQtyE8 > 0) {
                     // 使用累计数量，确保能够达到目标价格
                     takerQtyE8 = cumulativeQtyE8;

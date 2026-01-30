@@ -24,7 +24,7 @@ public final class TokenManager {
     private SqlUtils sqlUtils;
 
     // token 有效期：1小时（毫秒）
-    private static final long TOKEN_EXPIRE_TIME = 3600 * 1000L;
+    private static final long TOKEN_EXPIRE_TIME = 3600*24*7 * 1000L;
 
     // 清理过期 token 的定时任务
     private final ScheduledExecutorService cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {

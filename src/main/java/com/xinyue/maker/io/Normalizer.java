@@ -77,7 +77,6 @@ public final class Normalizer {
      */
     private void parseDydxMessage(Exchange exchange, byte[] payload, CoreEvent event) throws IOException {
         JsonNode root = OBJECT_MAPPER.readTree(payload);
-
         String type = root.path("type").asText();
         String channel = root.path("channel").asText();
         
@@ -90,6 +89,7 @@ public final class Normalizer {
                 // 增量更新消息
                 parseDydxIncrementalUpdate(root, event);
             }
+            LOG.debug("订单簿变动消息:{}",root.toString());
 
         } else if ("v4_subaccounts".equals(channel)) {
             // 账户订单频道
@@ -215,10 +215,6 @@ public final class Normalizer {
             event.askPrices[i] = parseDecimal(level.get(0).asText());
             event.askQtys[i] = parseDecimal(level.get(1).asText());
         }
-        if(bidCount> 0 && askCount > 0){
-            event.depthCount = Math.max(bidCount, askCount);
-        }
-        
         event.depthCount = Math.max(bidCount, askCount);
     }
 

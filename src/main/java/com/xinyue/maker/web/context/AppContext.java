@@ -141,7 +141,16 @@ public class AppContext {
     }
 
     private Disruptor<CoreEvent> createDisruptor() {
-        ThreadFactory threadFactory = Thread.ofVirtual().name("disruptor-", 0).factory();
+        // 使用真实线程（CPU 密集型作业不适合虚拟线程）
+        ThreadFactory threadFactory = new ThreadFactory() {
+            private int counter = 0;
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "disruptor-" + (counter++));
+                t.setDaemon(false);
+                return t;
+            }
+        };
         return CoreEngine.bootstrapDisruptor(
                 new CoreEventFactory(),
                 null,
@@ -200,54 +209,9 @@ public class AppContext {
         return dydxGateway;
     }
 
-    /**
-     * 统一配置所有账户：从配置文件读取账户信息，初始化 TradeSession 和资产余额。
-     * 注意：订单订阅不在初始化时进行，而是在启动策略时根据 buyAccountIds 和 sellAccountIds 订阅。
-     * 这是阻塞操作，所有账户初始化完成后才会返回。
-     */
-    private static void configureAllAccounts(NettySidecarGateway dydxGateway, PositionManager positionManager) {
-        // 从配置文件读取所有账户信息
-        List<AccountConfig.AccountInfo> accounts = AccountConfig.loadAccounts();
-
-        if (accounts.isEmpty()) {
-            throw new RuntimeException("警告: 未找到任何账户配置，请检查 accounts.properties 文件");
-        }
-
-        System.out.println("从配置文件加载了 " + accounts.size() + " 个账户，开始初始化...");
-
-        // 为每个账户初始化 TradeSession、订单订阅和资产余额（阻塞操作）
-        for (AccountConfig.AccountInfo account : accounts) {
-            try {
-                // 1. 初始化 TradeSession（用于下单）
-                dydxGateway.initializeSession(
-                        account.accountId,
-                        account.accountName,
-                        account.mnemonicPhrase
-                );
-
-                // 2. 初始化账户资产余额（阻塞操作，从 dYdX REST API 同步）
-                // 注意：账户订单订阅不在初始化时进行，而是在启动策略时根据 buyAccountIds 和 sellAccountIds 订阅
-                System.out.println(String.format(
-                        "正在初始化账户资产: accountId=%d, address=%s...",
-                        account.accountId, account.address
-                ));
-                positionManager.initializeFromDydx(account.accountId, account.address, account.subaccountNumber);
-
-                System.out.println(String.format(
-                        "账户配置成功: accountId=%d, accountName=%s, address=%s, subaccountNumber=%d",
-                        account.accountId, account.accountName, account.address, account.subaccountNumber
-                ));
-            } catch (Exception e) {
-                System.err.println(String.format(
-                        "账户配置失败: accountId=%d, address=%s, error=%s",
-                        account.accountId, account.address, e.getMessage()
-                ));
-                e.printStackTrace();
-                // 继续处理下一个账户，不中断整个初始化流程
-            }
-        }
-
-        System.out.println("all account init finish！");
+    public OrderManagementSystem getOrderManagementSystem(){
+        return oms;
     }
+
 }
 

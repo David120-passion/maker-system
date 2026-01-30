@@ -124,9 +124,9 @@ final class DydxWebSocketClientHandler extends SimpleChannelInboundHandler<Objec
     public void channelInactive(ChannelHandlerContext ctx) {
         if (!handshakeFuture.isDone()) {
             handshakeFuture.setFailure(new IllegalStateException("WebSocket collect closed"));
-            System.out.println("dydx subcribe handshake collection was close");
+            LOG.info("dydx subcribe handshake collection was close");
         }
-        System.out.println("dydx subcribe orderbook collection was close ");
+        LOG.info("dydx subcribe orderbook collection was close ");
     }
 
     @Override

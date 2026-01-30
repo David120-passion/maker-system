@@ -4,6 +4,7 @@ import com.xinyue.maker.common.AssetRegistry;
 import com.xinyue.maker.common.Exchange;
 import com.xinyue.maker.common.ScaleConstants;
 import com.xinyue.maker.common.SymbolRegistry;
+import com.xinyue.maker.core.oms.OrderManagementSystem;
 import com.xinyue.maker.core.position.PositionManager;
 import com.xinyue.maker.io.input.dydx.DydxMarketDataConnector;
 import com.xinyue.maker.io.output.NettySidecarGateway;
@@ -253,10 +254,34 @@ public class StrategyController {
             String message;
             
             if (stopAll) {
+                // 先获取所有策略的 symbolId（用于后续清理）
+                java.util.Map<Short, StrategyService.StrategyStatus> allStatus = getStrategyService().getAllStatus();
+                java.util.Set<Short> symbolIds = new java.util.HashSet<>(allStatus.keySet());
+                
                 // 停止所有策略
                 message = getStrategyService().stopAllStrategies();
                 // 退订所有策略的订阅
                 unsubscribeAllStrategies();
+                
+                // 停止所有策略后，取消所有订单并清理订单簿
+                OrderManagementSystem oms = appContext.getOms();
+                com.xinyue.maker.core.lob.LobManager lobManager = appContext.getLobManager();
+                
+                if (oms != null) {
+                    int totalCanceledCount = 0;
+                    for (Short symbolId : symbolIds) {
+                        int canceledCount = oms.cancelAllOrdersBySymbolId(symbolId);
+                        totalCanceledCount += canceledCount;
+                    }
+                    LOG.info("停止所有策略后已取消订单: totalCanceledCount={}", totalCanceledCount);
+                }
+                
+                if (lobManager != null) {
+                    for (Short symbolId : symbolIds) {
+                        lobManager.clearOrderBooksBySymbolId(symbolId);
+                    }
+                    LOG.info("停止所有策略后已清理订单簿: symbolIds={}", symbolIds);
+                }
             } else {
                 // 停止指定 symbolId 的策略
                 short symbolId = parseShort(params.get("symbolId"), (short) 0);
@@ -269,9 +294,24 @@ public class StrategyController {
                 // 先获取策略信息（用于退订），再停止策略
                 StrategyService.StrategyInfo strategyInfo = getStrategyService().getStrategyInfo(symbolId);
                 message = getStrategyService().stopStrategy(symbolId);
-                // 退订该策略的订阅
+                //停止策略后先等待5秒再去解除订阅
+                Thread.sleep(3000);
                 if (strategyInfo != null) {
                     unsubscribeStrategy(strategyInfo);
+                }
+                
+                // 停止策略之后把所有订单取消
+                OrderManagementSystem oms = appContext.getOms();
+                if (oms != null) {
+                    int canceledCount = oms.cancelAllOrdersBySymbolId(symbolId);
+                    LOG.info("策略停止后已取消订单: symbolId={}, canceledCount={}", symbolId, canceledCount);
+                }
+                
+                // 清理订单簿中与 symbolId 相关的数据
+                com.xinyue.maker.core.lob.LobManager lobManager = appContext.getLobManager();
+                if (lobManager != null) {
+                    lobManager.clearOrderBooksBySymbolId(symbolId);
+                    LOG.info("策略停止后已清理订单簿: symbolId={}", symbolId);
                 }
             }
             

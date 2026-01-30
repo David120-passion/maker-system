@@ -2,6 +2,7 @@ package com.xinyue.maker.core.lob;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xinyue.maker.common.ScaleConstants;
 import com.xinyue.maker.core.TestEventScheduler;
 import it.unimi.dsi.fastutil.longs.Long2LongRBTreeMap;
 import it.unimi.dsi.fastutil.longs.LongComparators;
@@ -363,6 +364,9 @@ public final class LocalOrderBookRBTree implements ILocalOrderBook {
                 }
             }
         }
+        if(sum / (double) ScaleConstants.SCALE_E8 > 100){
+            LOG.info("异常订单，订单簿情况：{}",asks.toString());
+        }
         return sum;
     }
 
@@ -393,6 +397,9 @@ public final class LocalOrderBookRBTree implements ILocalOrderBook {
                     sum += qty;
                 }
             }
+        }
+        if(sum / (double) ScaleConstants.SCALE_E8 > 100){
+            LOG.info("异常订单，订单簿情况：{}",bids.toString());
         }
         return sum;
     }

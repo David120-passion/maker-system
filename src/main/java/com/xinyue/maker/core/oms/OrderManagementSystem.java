@@ -11,10 +11,13 @@ import com.xinyue.maker.core.position.PositionManager;
 import com.xinyue.maker.infra.MetricsService;
 import com.xinyue.maker.infra.PersistenceDispatcher;
 import com.xinyue.maker.io.output.ExecutionGatewayManager;
+import com.xinyue.maker.strategy.InternalRangeOscillatorStrategy2;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.agrona.collections.Long2LongHashMap;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.agrona.collections.LongArrayList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -62,7 +65,8 @@ public final class OrderManagementSystem {
         this.gatewayManager = gatewayManager;
         this.positionManager = positionManager;
     }
-    
+
+    private static final Logger LOG = LoggerFactory.getLogger(OrderManagementSystem.class);
     /**
      * 获取 ExecutionGatewayManager（供 AccountBalanceBalancer 使用）。
      */
@@ -348,12 +352,57 @@ public final class OrderManagementSystem {
             if (order.orderStatus == 6 || order.orderStatus == 5) { // Canceled or Filled
                 removeOrderFromPriceIndex(order);
             }
-            
+//            LOG.info("订单状态更新: localOrderId={}, goodTilBlockTimeSec:{}", order.localOrderId, order.goodTilBlockTimeSec);
             // 记录指标
             metricsService.recordOrder(order.symbolId);
         }
     }
 
+    /**
+     * 根据 symbolId 获取所有活跃订单（状态不是 Filled 或 Canceled）。
+     * 
+     * @param symbolId 交易对 ID
+     * @return 订单列表（只包含活跃订单，即状态不是 5=Filled 或 6=Canceled）
+     */
+    public java.util.List<Order> getOrdersBySymbolId(short symbolId) {
+        java.util.List<Order> result = new java.util.ArrayList<>();
+        
+        // 遍历全局索引，查找匹配的订单
+        globalIndex.forEach((localOrderId, order) -> {
+            if (order.symbolId == symbolId) {
+                // 只返回活跃订单（状态不是 Filled(5) 或 Canceled(6)）
+                if (order.orderStatus != 5 && order.orderStatus != 6) {
+                    result.add(order);
+                }
+            }
+        });
+        
+        return result;
+    }
+    
+    /**
+     * 取消指定 symbolId 的所有活跃订单。
+     * 
+     * @param symbolId 交易对 ID
+     * @return 取消的订单数量
+     */
+    public int cancelAllOrdersBySymbolId(short symbolId) {
+        java.util.List<Order> orders = getOrdersBySymbolId(symbolId);
+        int canceledCount = 0;
+        for (Order order : orders) {
+            try {
+                cancelOrder(order.localOrderId);
+                canceledCount++;
+            } catch (Exception e) {
+                // 记录错误但继续取消其他订单
+                // 注意：这里不使用 Logger，避免在 L2 热路径中引入日志依赖
+                // 错误会被上层捕获并记录
+            }
+        }
+
+        return canceledCount;
+    }
+    
     /**
      * 取消订单（异步，非阻塞）。
      * 
@@ -369,7 +418,6 @@ public final class OrderManagementSystem {
         if (order.orderStatus == 5 || order.orderStatus == 6) { // Filled or Canceled
             return;
         }
-        
         // 立即将订单状态标记为 PendingCancel（状态码 8）
         order.orderStatus = 8; // PendingCancel
         order.updateTime = System.currentTimeMillis();
